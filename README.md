@@ -1,4 +1,4 @@
-# duplicate-files
+# de-duplicater
 Find and manage duplicate files
 Utility to help identify and manage duplicate files on the file system.
 This uses a 2 step process:
