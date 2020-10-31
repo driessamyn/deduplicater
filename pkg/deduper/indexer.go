@@ -1,4 +1,4 @@
-package indexer
+package deduper
 
 import (
 	"crypto/md5"
@@ -11,77 +11,25 @@ import (
 	"sync"
 )
 
+const INDEX_NAME = ".duplicate-index.json"
+
 type Indexer interface {
-	Create() error
-}
-
-type IndexedFile struct {
-	Path        string
-	Md5Checksum []byte
-}
-
-func (f IndexedFile) merge(mf IndexedFile) {
-	if nil != mf.Md5Checksum {
-		f.Md5Checksum = mf.Md5Checksum
-	}
-}
-
-type index struct {
-	mu   sync.Mutex
-	iMap map[string]IndexedFile
+	Create(dir string) error
+	Load() error
 }
 
 type indexerImp struct {
-	dir       string
 	indexPath string
 	md5       bool
-	index     *index
+	index     *Index
 }
 
-func NewIndexer(dir string, indexPath string, md5 bool) Indexer {
-	return indexerImp{
-		dir:       dir,
-		indexPath: indexPath,
-		md5:       md5,
-		// just in memory dictionary for now - maybe need to do something better in the future
-		index: &index{
-			iMap: make(map[string]IndexedFile),
-		},
-	}
-}
-
-func (i indexerImp) updateIndex(f IndexedFile) {
-	i.index.mu.Lock()
-	if indexedFile, found := i.index.iMap[f.Path]; found {
-		indexedFile.merge(f)
-	} else {
-		i.index.iMap[f.Path] = f
-	}
-	i.index.mu.Unlock()
-	// fmt.Printf("%v(%v)\n", f.Path, f.Md5Checksum)
-}
-
-func (i indexerImp) save() error {
-	fmt.Printf("index: %v", *i.index)
-	file, err := json.MarshalIndent(i.index.iMap, "", " ")
-	if nil != err {
-		return fmt.Errorf("error creating index file: %w\n", err)
-	}
-	fp := filepath.Join(i.indexPath, ".duplicate-index.json")
-	err = ioutil.WriteFile(fp, file, 0644)
-	if nil != err {
-		return fmt.Errorf("error saving index file to %v: %w\n", fp, err)
-	}
-
-	return err
-}
-
-func (i indexerImp) Create() error {
+func (i indexerImp) Create(dir string) error {
 	// find all files
 	var wg sync.WaitGroup
 	doneChannel := make(chan bool)
 	errorChannel := make(chan error)
-	findAll(i.dir, func(filePath string) {
+	findAll(dir, func(filePath string) {
 		if i.md5 {
 			// using routines to create md5 hashes of the files and store in index when done.
 			wg.Add(1)
@@ -112,6 +60,62 @@ func (i indexerImp) Create() error {
 	}
 
 	return nil
+}
+
+func (i indexerImp) Load() error {
+	fp := filepath.Join(i.indexPath, INDEX_NAME)
+	jsonFile, err := os.Open(fp)
+	if nil != err {
+		return fmt.Errorf("error loading index file: %w\n", err)
+	}
+	byteValue, err := ioutil.ReadAll(jsonFile)
+	if nil != err {
+		return fmt.Errorf("error reading index file: %w\n", err)
+	}
+
+	var ind []IndexedFile
+	err = json.Unmarshal(byteValue, &ind)
+	if nil != err {
+		return fmt.Errorf("error parsing index file: %w\n", err)
+	}
+
+	iMap := make(map[string]int)
+	for i, v := range ind {
+		iMap[v.Path] = i
+	}
+
+	i.index = &Index{
+		ind:  ind,
+		iMap: iMap,
+	}
+
+	return nil
+}
+
+func (i indexerImp) updateIndex(f IndexedFile) {
+	i.index.mu.Lock()
+	if indexedKey, found := i.index.iMap[f.Path]; found {
+		i.index.ind[indexedKey].merge(f)
+	} else {
+		i.index.ind = append(i.index.ind, f)
+		i.index.iMap[f.Path] = len(i.index.ind) - 1
+	}
+	i.index.mu.Unlock()
+	// fmt.Printf("%v(%v)\n", f.Path, f.Md5Checksum)
+}
+
+func (i indexerImp) save() error {
+	file, err := json.MarshalIndent(i.index.ind, "", " ")
+	if nil != err {
+		return fmt.Errorf("error creating index file: %w\n", err)
+	}
+	fp := filepath.Join(i.indexPath, INDEX_NAME)
+	err = ioutil.WriteFile(fp, file, 0644)
+	if nil != err {
+		return fmt.Errorf("error saving index file to %v: %w\n", fp, err)
+	}
+
+	return err
 }
 
 func md5ChecksumFile(filePath string, errorChannel chan error, fun func(f IndexedFile)) {
