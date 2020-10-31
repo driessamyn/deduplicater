@@ -53,6 +53,17 @@ func main() {
 			fmt.Printf("Failed loading index: %v\n", err)
 		}
 
+		dupes := deduper.Find()
+		if len(dupes) == 0 {
+			fmt.Println("No duplicates found.")
+			return
+		}
+
+		fmt.Printf("%v duplicates found:", len(dupes))
+		for _, v := range deduper.Find() {
+			fmt.Printf("%v\n", v)
+		}
+
 		fmt.Printf("dups: %v", deduper.Find())
 	}
 }

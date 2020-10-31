@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 const INDEX_NAME = ".duplicate-index.json"
@@ -25,11 +26,15 @@ type indexerImp struct {
 }
 
 func (i indexerImp) Create(dir string) error {
+	start := time.Now()
+
 	// find all files
 	var wg sync.WaitGroup
 	doneChannel := make(chan bool)
 	errorChannel := make(chan error)
+	fileCount := 0
 	findAll(dir, func(filePath string) {
+		fileCount++
 		if i.md5 {
 			// using routines to create md5 hashes of the files and store in index when done.
 			wg.Add(1)
@@ -47,19 +52,28 @@ func (i indexerImp) Create(dir string) error {
 	}()
 
 	//w wait for everything to finish or an error happens
-	select {
-	case err := <-errorChannel:
-		// give up when we encounter an error
-		return err
-	case <-doneChannel:
-	}
+	updateTimer := time.Now()
+	for {
+		select {
+		case err := <-errorChannel:
+			// give up when we encounter an error
+			return err
+		case <-doneChannel:
+			fmt.Printf("Done indexing %v files in %v\n", len(i.index.ind), time.Since(start))
+			// save index
+			if err := i.save(); nil != err {
+				return err
+			}
 
-	// save index
-	if err := i.save(); nil != err {
-		return err
+			return nil
+		default:
+			if time.Since(updateTimer).Seconds() > 5 {
+				fmt.Printf("Indexed %v/%v files in %v\n", len(i.index.ind), fileCount, time.Since(start))
+				updateTimer = time.Now()
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-
-	return nil
 }
 
 func (i indexerImp) Load() error {
@@ -84,10 +98,8 @@ func (i indexerImp) Load() error {
 		iMap[v.Path] = i
 	}
 
-	i.index = &Index{
-		ind:  ind,
-		iMap: iMap,
-	}
+	i.index.ind = ind
+	i.index.iMap = iMap
 
 	return nil
 }
