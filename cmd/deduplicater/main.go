@@ -55,15 +55,13 @@ func main() {
 
 		dupes := deduper.Find()
 		if len(dupes) == 0 {
-			fmt.Println("No duplicates found.")
+			fmt.Println("No duplicates found")
 			return
 		}
 
-		fmt.Printf("%v duplicates found:", len(dupes))
+		fmt.Printf("%v duplicates found:\n", len(dupes))
 		for _, v := range deduper.Find() {
 			fmt.Printf("%v\n", v)
 		}
-
-		fmt.Printf("dups: %v", deduper.Find())
 	}
 }
