@@ -16,6 +16,7 @@ type md5Finder struct {
 func (finder md5Finder) Find() [][]string {
 	dupes := make(map[string][]string)
 	cnt := 0
+	// todo: optimise further to no compare items already compared.
 	for i, v := range finder.index.ind {
 		for _, vv := range finder.index.ind[i+1:] {
 			if bytes.Compare(v.Md5Checksum, vv.Md5Checksum) != 0 {
