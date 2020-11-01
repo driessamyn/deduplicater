@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/akamensky/argparse"
+	"github.com/manifoldco/promptui"
 
 	"github.com/driessamyn/deduplicater/pkg/deduper"
 )
@@ -62,6 +63,44 @@ func main() {
 		fmt.Printf("%v duplicates found:\n", len(dupes))
 		for _, v := range deduper.Find() {
 			fmt.Printf("%v\n", v)
+		}
+
+		const CANCEL = "Do nothing"
+		const DELETE = "Delete duplicates"
+		const MOVE = "Move files to another folder"
+		items := []string{CANCEL, DELETE, MOVE}
+
+		prompt := promptui.Select{
+			Label: "What do you want to do with the duplucates?",
+			Items: items,
+		}
+
+		_, result, _ := prompt.Run()
+
+		switch result {
+		case DELETE:
+			confirmPrompt := promptui.Prompt{
+				Label:     "Are you sure you want to permanantly delete duplicates? (THIS CANNOT BE UNDONE)",
+				IsConfirm: true,
+			}
+
+			if confirm, _ := confirmPrompt.Run(); "Y" == confirm {
+				fmt.Printf("TODO: delete %q\n", result)
+			}
+		case MOVE:
+			movePrompt := promptui.Prompt{
+				Label:    "Location to copy duplicate files to",
+				Validate: deduper.IsDirExist,
+			}
+
+			directory, _ := movePrompt.Run()
+			err := deduper.MoveDuplicates(dupes, directory)
+			if nil != err {
+				fmt.Printf("Failed to move files: %v", err)
+			}
+		case CANCEL:
+		default:
+			return
 		}
 	}
 }
