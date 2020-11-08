@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/spf13/afero"
 )
 
 type Deduper interface {
@@ -15,12 +17,13 @@ type Deduper interface {
 }
 
 type deduperImp struct {
+	fs        afero.Fs
 	indexPath string
 	Indexer
 	Finder
 }
 
-func NewDeduper(indexPath string, md5 bool) Deduper {
+func NewDeduper(fs afero.Fs, indexPath string, md5 bool) Deduper {
 	ind := &Index{
 		iMap: make(map[string]int),
 		ind:  []IndexedFile{},
@@ -28,6 +31,7 @@ func NewDeduper(indexPath string, md5 bool) Deduper {
 	// todo: composite finder
 	f := &md5Finder{ind}
 	return &deduperImp{
+		fs,
 		indexPath,
 		indexerImp{
 			indexPath,
@@ -43,7 +47,7 @@ type IndexedFile struct {
 	Md5Checksum []byte
 }
 
-func (f IndexedFile) merge(mf IndexedFile) {
+func (f *IndexedFile) merge(mf IndexedFile) {
 	if nil != mf.Md5Checksum {
 		f.Md5Checksum = mf.Md5Checksum
 	}
@@ -56,14 +60,10 @@ type Index struct {
 }
 
 func (d deduperImp) IsDirExist(target string) error {
-	src, err := os.Stat(target)
+	exist, err := afero.DirExists(d.fs, target)
 
-	if os.IsNotExist(err) {
+	if !exist {
 		return fmt.Errorf("Directory %v does not exist", target)
-	}
-
-	if !src.Mode().IsDir() {
-		return fmt.Errorf("%v is not a directory", target)
 	}
 
 	return err
@@ -76,13 +76,13 @@ func (d deduperImp) MoveDuplicates(dupes [][]string, target string) error {
 			newPath := filepath.Join(target, file[len(d.indexPath):])
 			newPathDir := filepath.Dir(newPath)
 			// create dir if needed
-			if _, err := os.Stat(newPathDir); os.IsNotExist(err) {
+			if _, err := d.fs.Stat(newPathDir); os.IsNotExist(err) {
 				fmt.Printf("Creating target directory %v\n", newPathDir)
-				os.MkdirAll(newPathDir, os.ModePerm)
+				d.fs.MkdirAll(newPathDir, os.ModePerm)
 			}
 
 			fmt.Printf("Moving %v to %v\n", file, newPath)
-			err := os.Rename(file, newPath)
+			err := d.fs.Rename(file, newPath)
 			if nil != err {
 				return fmt.Errorf("error moving %v to %v: %w\n", file, newPath, err)
 			}
