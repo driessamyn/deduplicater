@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/spf13/afero"
 )
 
 const INDEX_NAME = ".duplicate-index.json"
@@ -20,9 +22,22 @@ type Indexer interface {
 }
 
 type indexerImp struct {
+	fs        afero.Fs
 	indexPath string
 	md5       bool
 	index     *Index
+	fileWalker
+}
+
+func newIndexer(fs afero.Fs, indexPath string, md5 bool, index *Index) Indexer {
+	// TODO: composite for different index strategies. Only md5 supported now
+	return &indexerImp{
+		fs,
+		indexPath,
+		md5,
+		index,
+		fileSystemWalker{fs},
+	}
 }
 
 func (i indexerImp) Create(dir string) error {
@@ -33,7 +48,7 @@ func (i indexerImp) Create(dir string) error {
 	doneChannel := make(chan bool)
 	errorChannel := make(chan error)
 	fileCount := 0
-	findAll(dir, func(filePath string) {
+	i.walk(dir, func(filePath string) {
 		fileCount++
 		if i.md5 {
 			// using routines to create md5 hashes of the files and store in index when done.
@@ -153,9 +168,17 @@ func md5ChecksumFile(filePath string, errorChannel chan error, fun func(f Indexe
 	})
 }
 
-func findAll(dir string, fun func(string)) error {
+type fileWalker interface {
+	walk(dir string, fun func(string)) error
+}
+
+type fileSystemWalker struct {
+	fs afero.Fs
+}
+
+func (fw fileSystemWalker) walk(dir string, fun func(string)) error {
 	// find all files
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	err := afero.Walk(fw.fs, dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("error accessing a path %q: %w\n", path, err)
 		}

@@ -33,12 +33,13 @@ func NewDeduper(fs afero.Fs, indexPath string, md5 bool) Deduper {
 	return &deduperImp{
 		fs,
 		indexPath,
-		indexerImp{
+		newIndexer(
+			fs,
 			indexPath,
 			md5,
 			// just in memory dictionary for now - maybe need to do something better in the future
 			ind,
-		},
+		),
 		f}
 }
 

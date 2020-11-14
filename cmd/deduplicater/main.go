@@ -6,6 +6,7 @@ import (
 
 	"github.com/akamensky/argparse"
 	"github.com/manifoldco/promptui"
+	"github.com/spf13/afero"
 
 	"github.com/driessamyn/deduplicater/pkg/deduper"
 )
@@ -34,7 +35,7 @@ func main() {
 		return
 	}
 
-	deduper := deduper.NewDeduper(*indexPath, *md5Flag)
+	deduper := deduper.NewDeduper(afero.NewOsFs(), *indexPath, *md5Flag)
 
 	if indexCmd.Happened() {
 		fmt.Printf("Indexing %v to %v\n", *dirpath, *indexPath)

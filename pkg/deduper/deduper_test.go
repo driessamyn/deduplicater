@@ -59,7 +59,7 @@ func (suite *MemoryFsTestSuite) SetupTest() {
 	}
 }
 
-func (suite *MemoryFsTestSuite) TestDirExist_InvalidDir() {
+func (suite *MemoryFsTestSuite) Test_DirExist_InvalidDir() {
 	deduper := NewDeduper(suite.fs, suite.indexPath, true)
 
 	err := deduper.IsDirExist("invalidDir")
@@ -67,7 +67,7 @@ func (suite *MemoryFsTestSuite) TestDirExist_InvalidDir() {
 	assert.Error(suite.T(), err)
 }
 
-func (suite *MemoryFsTestSuite) TestDirExist_ValidDir() {
+func (suite *MemoryFsTestSuite) Test_DirExist_ValidDir() {
 	deduper := NewDeduper(suite.fs, suite.indexPath, true)
 
 	err := deduper.IsDirExist(suite.indexPath)
@@ -75,7 +75,7 @@ func (suite *MemoryFsTestSuite) TestDirExist_ValidDir() {
 	assert.Nil(suite.T(), err)
 }
 
-func (suite *MemoryFsTestSuite) TestDirExist_MoveDuplicates_ok() {
+func (suite *MemoryFsTestSuite) Test_MoveDuplicates_ok() {
 	deduper := NewDeduper(suite.fs, suite.indexPath, true)
 
 	target := "testDir/temp"
@@ -104,4 +104,20 @@ func (suite *MemoryFsTestSuite) TestDirExist_MoveDuplicates_ok() {
 
 	removed, _ := afero.Exists(suite.fs, "testDir/pictures/bar.txt")
 	assert.False(suite.T(), removed)
+}
+
+func (suite *MemoryFsTestSuite) Test_MoveDuplicates_error() {
+	deduper := NewDeduper(suite.fs, suite.indexPath, true)
+
+	target := "testDir/temp"
+	dupe1 := []string{"testDir/pictures/foo.txt", "testDir/pictures/bar.txt"}
+
+	// only create 1 file
+	if err := afero.WriteFile(suite.fs, "testDir/pictures/foo.txt", []byte(fmt.Sprintf("content: %s", "foo")), 0644); nil != err {
+		fmt.Errorf("failed to create test file %v: %w", "testDir/pictures/foo.txt", err)
+	}
+
+	err := deduper.MoveDuplicates([][]string{dupe1}, target)
+
+	assert.Error(suite.T(), err)
 }
