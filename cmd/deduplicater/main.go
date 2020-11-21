@@ -11,11 +11,24 @@ import (
 	"github.com/driessamyn/deduplicater/pkg/deduper"
 )
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+	builtBy = "unknown"
+)
+
 func main() {
 	parser := argparse.NewParser("duplicates", "Find and manage duplicate files")
 
 	// general
-	indexPath := parser.String("i", "index", &argparse.Options{Required: true, Help: "Path to the index file to create/use"})
+	versionFlag := parser.Flag(
+		"v", "version", &argparse.Options{
+			Help: "Current version",
+		},
+	)
+
+	indexPath := parser.String("i", "index", &argparse.Options{Required: false, Help: "Path to the index file to create/use"})
 	md5Flag := parser.Flag("m", "md5", &argparse.Options{
 		Required: false,
 		Help:     "Use md5 hash",
@@ -37,7 +50,8 @@ func main() {
 
 	deduper := deduper.NewDeduper(afero.NewOsFs(), *indexPath, *md5Flag)
 
-	if indexCmd.Happened() {
+	switch {
+	case indexCmd.Happened():
 		fmt.Printf("Indexing %v to %v\n", *dirpath, *indexPath)
 
 		err := deduper.Create(*dirpath)
@@ -45,9 +59,8 @@ func main() {
 		if nil != err {
 			fmt.Printf("Failed creating index: %v\n", err)
 		}
-	}
 
-	if findCmd.Happened() {
+	case findCmd.Happened():
 		fmt.Printf("Finding duplicates in %v using 'md5 checksum'\n", *indexPath)
 
 		err := deduper.Load()
@@ -103,5 +116,8 @@ func main() {
 		default:
 			return
 		}
+
+	case *versionFlag:
+		fmt.Printf("deduplicater %v (%v - %v)", version, commit, date)
 	}
 }
