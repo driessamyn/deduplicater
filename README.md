@@ -1,4 +1,4 @@
-[![Build](https://github.com/driessamyn/deduplicater/workflows/Go/badge.svg)](https://github.com/driessamyn/deduplicater/actions?query=workflow%3AGo)
+[![Build](https://github.com/driessamyn/deduplicater/workflows/Build/badge.svg)](https://github.com/driessamyn/deduplicater/actions?query=workflow%3ABuild)
 [![Codecov](https://codecov.io/gh/<driessamyn/deduplicater/branch/master/graph/badge.svg)](https://codecov.io/gh/driessamyn/deduplicater)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
