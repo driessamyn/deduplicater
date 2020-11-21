@@ -24,19 +24,31 @@ type Indexer interface {
 type indexerImp struct {
 	fs        afero.Fs
 	indexPath string
-	md5       bool
 	index     *Index
 	fileWalker
+	fileHasher
+	saver
+	loader
 }
 
 func newIndexer(fs afero.Fs, indexPath string, md5 bool, index *Index) Indexer {
-	// TODO: composite for different index strategies. Only md5 supported now
 	return &indexerImp{
 		fs,
 		indexPath,
-		md5,
 		index,
-		fileSystemWalker{fs},
+		&fileSystemWalker{fs},
+		// TODO: composite for different index strategies. Only md5 supported now
+		&mdFiver{fs},
+		&indexSaver{
+			index,
+			indexPath,
+			fs,
+		},
+		&indexLoader{
+			index,
+			indexPath,
+			fs,
+		},
 	}
 }
 
@@ -50,14 +62,15 @@ func (i indexerImp) Create(dir string) error {
 	fileCount := 0
 	i.walk(dir, func(filePath string) {
 		fileCount++
-		if i.md5 {
-			// using routines to create md5 hashes of the files and store in index when done.
-			wg.Add(1)
-			go md5ChecksumFile(filePath, errorChannel, func(f IndexedFile) {
+		// using routines to create md5 hashes of the files and store in index when done.
+		wg.Add(1)
+		go i.hash(filePath,
+			func(f IndexedFile) {
 				defer wg.Done()
-				i.updateIndex(f)
+				i.index.updateIndex(f)
+			}, func(filePath string, err error) {
+				errorChannel <- fmt.Errorf("error hashing file %v: %w\n", filePath, err)
 			})
-		}
 	})
 
 	// signal for done
@@ -91,9 +104,30 @@ func (i indexerImp) Create(dir string) error {
 	}
 }
 
-func (i indexerImp) Load() error {
+func (i *Index) updateIndex(f IndexedFile) {
+	i.mu.Lock()
+	if indexedKey, found := i.iMap[f.Path]; found {
+		i.ind[indexedKey].merge(f)
+	} else {
+		i.ind = append(i.ind, f)
+		i.iMap[f.Path] = len(i.ind) - 1
+	}
+	i.mu.Unlock()
+}
+
+type loader interface {
+	Load() error
+}
+
+type indexLoader struct {
+	*Index
+	indexPath string
+	afero.Fs
+}
+
+func (i indexLoader) Load() error {
 	fp := filepath.Join(i.indexPath, INDEX_NAME)
-	jsonFile, err := os.Open(fp)
+	jsonFile, err := i.Open(fp)
 	if nil != err {
 		return fmt.Errorf("error loading index file: %w\n", err)
 	}
@@ -113,31 +147,29 @@ func (i indexerImp) Load() error {
 		iMap[v.Path] = i
 	}
 
-	i.index.ind = ind
-	i.index.iMap = iMap
+	i.ind = ind
+	i.iMap = iMap
 
 	return nil
 }
 
-func (i indexerImp) updateIndex(f IndexedFile) {
-	i.index.mu.Lock()
-	if indexedKey, found := i.index.iMap[f.Path]; found {
-		i.index.ind[indexedKey].merge(f)
-	} else {
-		i.index.ind = append(i.index.ind, f)
-		i.index.iMap[f.Path] = len(i.index.ind) - 1
-	}
-	i.index.mu.Unlock()
-	// fmt.Printf("%v(%v)\n", f.Path, f.Md5Checksum)
+type saver interface {
+	save() error
 }
 
-func (i indexerImp) save() error {
-	file, err := json.MarshalIndent(i.index.ind, "", " ")
+type indexSaver struct {
+	*Index
+	indexPath string
+	afero.Fs
+}
+
+func (i indexSaver) save() error {
+	file, err := json.MarshalIndent(i.ind, "", " ")
 	if nil != err {
 		return fmt.Errorf("error creating index file: %w\n", err)
 	}
 	fp := filepath.Join(i.indexPath, INDEX_NAME)
-	err = ioutil.WriteFile(fp, file, 0644)
+	err = afero.WriteFile(i.Fs, fp, file, 0644)
 	if nil != err {
 		return fmt.Errorf("error saving index file to %v: %w\n", fp, err)
 	}
@@ -145,11 +177,19 @@ func (i indexerImp) save() error {
 	return err
 }
 
-func md5ChecksumFile(filePath string, errorChannel chan error, fun func(f IndexedFile)) {
+type fileHasher interface {
+	hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error))
+}
+
+type mdFiver struct {
+	fs afero.Fs
+}
+
+func (fiver mdFiver) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error)) {
 	// open file (and close it when done)
-	f, err := os.Open(filePath)
+	f, err := fiver.fs.Open(filePath)
 	if err != nil {
-		errorChannel <- fmt.Errorf("error opening file %v: %w\n", filePath, err)
+		errorFunc(filePath, err)
 		return
 	}
 	defer f.Close()
@@ -157,7 +197,7 @@ func md5ChecksumFile(filePath string, errorChannel chan error, fun func(f Indexe
 	// hash of the file
 	h := md5.New()
 	if _, err := io.Copy(h, f); err != nil {
-		errorChannel <- fmt.Errorf("error creating hash for file %v: %w\n", filePath, err)
+		errorFunc(filePath, err)
 		return
 	}
 
