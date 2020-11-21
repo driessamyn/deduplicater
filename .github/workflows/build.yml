@@ -33,13 +33,7 @@ jobs:
       run: go build -v ./...
       
     - name: run tests
-      run: go test -v -coverprofile=coverage.out ./...
-
-    - name: Convert coverage.out to coverage.lcov
-      uses: jandelgado/gcov2lcov-action@v1.0.6
+      run: go test -v  -coverprofile=coverage.txt -covermode=atomic ./...
       
-    - name: Coveralls
-      uses: coverallsapp/github-action@v1.1.2
-      with:
-          github-token: ${{ secrets.github_token }}
-          path-to-lcov: coverage.lcov
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v1
