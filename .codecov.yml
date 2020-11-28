@@ -1,2 +1,3 @@
 ignore:
+  - "cmd/deduplicater/main.go"
   - "cmd/deduplicater/main_interactive.go"
