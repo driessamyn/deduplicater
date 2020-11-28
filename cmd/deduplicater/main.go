@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/akamensky/argparse"
-	"github.com/manifoldco/promptui"
 	"github.com/spf13/afero"
 
 	"github.com/driessamyn/deduplicater/pkg/deduper"
@@ -99,7 +98,7 @@ func run(args []string) {
 		} else if "" != *moveDir {
 			findAction = Move
 		} else {
-			findAction, moveDir = promptAction(deduper.IsDirExist)
+			findAction, moveDir = PromptAction(deduper.IsDirExist)
 		}
 
 		if Move == findAction {
@@ -116,39 +115,4 @@ func run(args []string) {
 	case *versionFlag:
 		fmt.Printf("deduplicater %v (%v - %v)", version, commit, date)
 	}
-}
-
-func promptAction(dirValidateFunc func(target string) error) (FindAction, *string) {
-	const CANCEL = "Do nothing"
-	const DELETE = "Delete duplicates"
-	const MOVE = "Move files to another folder"
-	items := []string{CANCEL, DELETE, MOVE}
-
-	prompt := promptui.Select{
-		Label: "What do you want to do with the duplucates?",
-		Items: items,
-	}
-
-	_, result, _ := prompt.Run()
-
-	switch result {
-	case DELETE:
-		confirmPrompt := promptui.Prompt{
-			Label:     "Are you sure you want to permanantly delete duplicates? (THIS CANNOT BE UNDONE)",
-			IsConfirm: true,
-		}
-
-		if confirm, _ := confirmPrompt.Run(); "Y" == confirm {
-			return Delete, nil
-		}
-	case MOVE:
-		movePrompt := promptui.Prompt{
-			Label:    "Location to copy duplicate files to",
-			Validate: dirValidateFunc,
-		}
-
-		moveDir, _ := movePrompt.Run()
-		return Move, &moveDir
-	}
-	return Unknown, nil
 }
