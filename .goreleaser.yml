@@ -34,5 +34,3 @@ brews:
     # Your app's description.
     # Default is empty.
     description: "Find and manage duplicate files."
-
-    license: "MIT"
