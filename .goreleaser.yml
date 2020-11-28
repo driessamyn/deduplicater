@@ -25,6 +25,7 @@ brews:
     tap:
       owner: driessamyn
       name: homebrew-repo
+      token: "{{ .Env.GORELEASER }}"
 
     # Your app's homepage.
     # Default is empty.
@@ -33,3 +34,5 @@ brews:
     # Your app's description.
     # Default is empty.
     description: "Find and manage duplicate files."
+
+    license: "MIT"
