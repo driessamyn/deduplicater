@@ -18,7 +18,19 @@ var (
 	builtBy = "unknown"
 )
 
+type FindAction int
+
+const (
+	Unknown FindAction = iota
+	Move               = iota
+	Delete             = iota
+)
+
 func main() {
+	run(os.Args)
+}
+
+func run(args []string) {
 	parser := argparse.NewParser("duplicates", "Find and manage duplicate files")
 
 	// general
@@ -28,8 +40,8 @@ func main() {
 		},
 	)
 
-	indexPath := parser.String("i", "index", &argparse.Options{Required: false, Help: "Path to the index file to create/use"})
-	md5Flag := parser.Flag("m", "md5", &argparse.Options{
+	indexPath := parser.String("f", "file", &argparse.Options{Required: false, Help: "Path to the index file to create/use"})
+	md5Flag := parser.Flag("", "md5", &argparse.Options{
 		Required: false,
 		Help:     "Use md5 hash",
 		Default:  true,
@@ -41,8 +53,10 @@ func main() {
 
 	// find
 	findCmd := parser.NewCommand("find", "Find duplicates")
+	deleteFlag := findCmd.Flag("", "remove", &argparse.Options{Required: false, Help: "Force remove duplicate files"})
+	moveDir := findCmd.String("", "move-dir", &argparse.Options{Required: false, Help: "Directory to move the files to"})
 
-	err := parser.Parse(os.Args)
+	err := parser.Parse(args)
 	if err != nil {
 		fmt.Print(parser.Usage(err))
 		return
@@ -79,45 +93,62 @@ func main() {
 			fmt.Printf("%v\n", v)
 		}
 
-		const CANCEL = "Do nothing"
-		const DELETE = "Delete duplicates"
-		const MOVE = "Move files to another folder"
-		items := []string{CANCEL, DELETE, MOVE}
-
-		prompt := promptui.Select{
-			Label: "What do you want to do with the duplucates?",
-			Items: items,
+		var findAction FindAction
+		if *deleteFlag {
+			findAction = Delete
+		} else if "" != *moveDir {
+			findAction = Move
+		} else {
+			findAction, moveDir = promptAction(deduper.IsDirExist)
 		}
 
-		_, result, _ := prompt.Run()
-
-		switch result {
-		case DELETE:
-			confirmPrompt := promptui.Prompt{
-				Label:     "Are you sure you want to permanantly delete duplicates? (THIS CANNOT BE UNDONE)",
-				IsConfirm: true,
-			}
-
-			if confirm, _ := confirmPrompt.Run(); "Y" == confirm {
-				fmt.Printf("TODO: delete %q\n", result)
-			}
-		case MOVE:
-			movePrompt := promptui.Prompt{
-				Label:    "Location to copy duplicate files to",
-				Validate: deduper.IsDirExist,
-			}
-
-			directory, _ := movePrompt.Run()
-			err := deduper.MoveDuplicates(dupes, directory)
+		if Move == findAction {
+			err := deduper.MoveDuplicates(dupes, *moveDir)
 			if nil != err {
 				fmt.Printf("Failed to move files: %v", err)
 			}
-		case CANCEL:
-		default:
-			return
+		} else if Delete == findAction {
+			fmt.Println("TODO: delete")
+		} else {
+			fmt.Println("Do Nothing")
 		}
 
 	case *versionFlag:
 		fmt.Printf("deduplicater %v (%v - %v)", version, commit, date)
 	}
+}
+
+func promptAction(dirValidateFunc func(target string) error) (FindAction, *string) {
+	const CANCEL = "Do nothing"
+	const DELETE = "Delete duplicates"
+	const MOVE = "Move files to another folder"
+	items := []string{CANCEL, DELETE, MOVE}
+
+	prompt := promptui.Select{
+		Label: "What do you want to do with the duplucates?",
+		Items: items,
+	}
+
+	_, result, _ := prompt.Run()
+
+	switch result {
+	case DELETE:
+		confirmPrompt := promptui.Prompt{
+			Label:     "Are you sure you want to permanantly delete duplicates? (THIS CANNOT BE UNDONE)",
+			IsConfirm: true,
+		}
+
+		if confirm, _ := confirmPrompt.Run(); "Y" == confirm {
+			return Delete, nil
+		}
+	case MOVE:
+		movePrompt := promptui.Prompt{
+			Label:    "Location to copy duplicate files to",
+			Validate: dirValidateFunc,
+		}
+
+		moveDir, _ := movePrompt.Run()
+		return Move, &moveDir
+	}
+	return Unknown, nil
 }

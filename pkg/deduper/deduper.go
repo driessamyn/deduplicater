@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/spf13/afero"
@@ -72,7 +74,10 @@ func (d deduperImp) IsDirExist(target string) error {
 
 func (d deduperImp) MoveDuplicates(dupes [][]string, target string) error {
 	for _, files := range dupes {
-		// keeping the first one, moving the rest
+		// TODO: let user figure out which ones to delete and which to keep. For now, we keep the one that is nearest to the root
+		sort.Slice(files, func(i, j int) bool {
+			return strings.Count(files[i], "\"") < strings.Count(files[j], "\"")
+		})
 		for _, file := range files[1:] {
 			newPath := filepath.Join(target, file[len(d.indexPath):])
 			newPathDir := filepath.Dir(newPath)
