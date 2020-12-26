@@ -4,6 +4,7 @@ import (
 	"crypto/md5"
 	"encoding/json"
 	"fmt"
+	"image/jpeg"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/corona10/goimagehash"
 	"github.com/spf13/afero"
 )
 
@@ -31,14 +33,13 @@ type indexerImp struct {
 	loader
 }
 
-func newIndexer(fs afero.Fs, indexPath string, md5 bool, index *Index) Indexer {
+func newIndexer(fs afero.Fs, indexPath string, index *Index, md5 bool, imageHash bool) Indexer {
 	return &indexerImp{
 		fs,
 		indexPath,
 		index,
 		&fileSystemWalker{fs},
-		// TODO: composite for different index strategies. Only md5 supported now
-		&mdFiver{fs},
+		newCompositeHasher(fs, md5, imageHash),
 		&indexSaver{
 			index,
 			indexPath,
@@ -50,6 +51,30 @@ func newIndexer(fs afero.Fs, indexPath string, md5 bool, index *Index) Indexer {
 			fs,
 		},
 	}
+}
+
+type compositeHasher struct {
+	hashers []fileHasher
+}
+
+func (hasher compositeHasher) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
+	for _, h := range hasher.hashers {
+		h.hash(filePath, fun, errorFunc, func() {})
+	}
+
+	completeFun()
+}
+
+func newCompositeHasher(fs afero.Fs, md5 bool, imageHash bool) fileHasher {
+	hashers := []fileHasher{}
+	if md5 {
+		hashers = append(hashers, &mdFiver{fs})
+	}
+	if imageHash {
+		hashers = append(hashers, &imageHasher{fs})
+	}
+
+	return &compositeHasher{hashers}
 }
 
 func (i indexerImp) Create(dir string) error {
@@ -66,10 +91,11 @@ func (i indexerImp) Create(dir string) error {
 		wg.Add(1)
 		go i.hash(filePath,
 			func(f IndexedFile) {
-				defer wg.Done()
 				i.index.updateIndex(f)
 			}, func(filePath string, err error) {
 				errorChannel <- fmt.Errorf("error hashing file %v: %w\n", filePath, err)
+			}, func() {
+				defer wg.Done()
 			})
 	})
 
@@ -178,14 +204,14 @@ func (i indexSaver) save() error {
 }
 
 type fileHasher interface {
-	hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error))
+	hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func())
 }
 
 type mdFiver struct {
 	fs afero.Fs
 }
 
-func (fiver mdFiver) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error)) {
+func (fiver mdFiver) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
 	// open file (and close it when done)
 	f, err := fiver.fs.Open(filePath)
 	if err != nil {
@@ -206,6 +232,47 @@ func (fiver mdFiver) hash(filePath string, fun func(f IndexedFile), errorFunc fu
 		Path:        filePath,
 		Md5Checksum: h.Sum(nil),
 	})
+
+	completeFun()
+}
+
+type imageHasher struct {
+	fs afero.Fs
+}
+
+func (hasher imageHasher) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
+	// open file (and close it when done)
+	f, err := hasher.fs.Open(filePath)
+	if err != nil {
+		errorFunc(filePath, err)
+		completeFun()
+		return
+	}
+	defer f.Close()
+
+	// assume jpeg for now
+	jpg, err := jpeg.Decode(f)
+	if _, isFormatError := err.(jpeg.FormatError); isFormatError {
+		fmt.Printf("Skipping '%s', only supporting jpeg images.\n", filePath)
+	} else if nil != err {
+		// todo figure out error when not jpg and try something else
+		errorFunc(filePath, err)
+	} else {
+		// hash of the file
+		if h, err := goimagehash.DifferenceHash(jpg); nil != err {
+			errorFunc(filePath, err)
+		} else {
+			fun(IndexedFile{
+				Path: filePath,
+				ImageHash: ImageHash{
+					Kind: int(h.GetKind()),
+					Hash: h.GetHash(),
+				},
+			})
+		}
+	}
+
+	completeFun()
 }
 
 type fileWalker interface {

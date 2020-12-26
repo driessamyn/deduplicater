@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -83,9 +84,61 @@ func (suite *e2eTestSuite) Test_Main_Move_Md5() {
 	}
 	run(args)
 
-	assert.FileExists(suite.T(), filepath.Join(suite.moveDir, "fred.txt"))
-	assert.NoFileExists(suite.T(), filepath.Join(suite.testDir, "fred.txt"))
-	assert.FileExists(suite.T(), filepath.Join(suite.testDir, "bob/freddy.txt"))
+	listFiles(suite.testDir)
+	listFiles(suite.moveDir)
+
+	assert.FileExists(suite.T(), filepath.Join(suite.moveDir, "bob/freddy.txt"))
+	assert.NoFileExists(suite.T(), filepath.Join(suite.testDir, "bob/freddy.txt"))
+	assert.FileExists(suite.T(), filepath.Join(suite.testDir, "fred.txt"))
+}
+
+func listFiles(root string) {
+	filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() && path != root {
+			listFiles(path)
+		} else {
+			fmt.Println(path)
+		}
+		return nil
+	})
+}
+
+func (suite *e2eTestSuite) Test_Main_Move_ImageHash() {
+	defer os.RemoveAll(suite.indexDir)
+	defer os.RemoveAll(suite.testDir)
+
+	// index - deduplicater index --imagehash -d "/mnt/c/Users/bob/Pictures" -f "/mnt/c/Users/bob/Pictures"
+	args := []string{
+		"main",
+		"index",
+		"--imagehash",
+		"-d",
+		suite.testDir,
+		"-f",
+		suite.indexDir,
+	}
+	run(args)
+	assert.FileExists(suite.T(), filepath.Join(suite.indexDir, ".duplicate-index.json"))
+
+	// find --imagehash -f "/mnt/c/Users/bob/Pictures" --move-dir "/mnt/c/Users/bob/moved"
+	args = []string{
+		"main",
+		"find",
+		"--imagehash",
+		"-f",
+		suite.indexDir,
+		"--move-dir",
+		suite.moveDir,
+	}
+	run(args)
+
+	listFiles(suite.testDir)
+	listFiles(suite.moveDir)
+
+	assert.FileExists(suite.T(), filepath.Join(suite.moveDir, "cat1-2.jpg"))
+	assert.NoFileExists(suite.T(), filepath.Join(suite.testDir, "cat1-2.jpg"))
+	assert.FileExists(suite.T(), filepath.Join(suite.testDir, "cat1.jpg"))
+	assert.FileExists(suite.T(), filepath.Join(suite.testDir, "cat2.jpg"))
 }
 
 func assertFileExist(path string) bool {

@@ -43,7 +43,13 @@ func run(args []string) {
 	md5Flag := parser.Flag("", "md5", &argparse.Options{
 		Required: false,
 		Help:     "Use md5 hash",
-		Default:  true,
+		Default:  false,
+	})
+
+	imageHashFlag := parser.Flag("", "imagehash", &argparse.Options{
+		Required: false,
+		Help:     "Use image hash",
+		Default:  false,
 	})
 
 	// index
@@ -61,7 +67,7 @@ func run(args []string) {
 		return
 	}
 
-	deduper := deduper.NewDeduper(afero.NewOsFs(), *indexPath, *md5Flag)
+	deduper := deduper.NewDeduper(afero.NewOsFs(), *indexPath, *md5Flag, *imageHashFlag)
 
 	switch {
 	case indexCmd.Happened():
@@ -81,14 +87,18 @@ func run(args []string) {
 			fmt.Printf("Failed loading index: %v\n", err)
 		}
 
-		dupes := deduper.Find()
+		dupes, err := deduper.Find()
+		if nil != err {
+			fmt.Printf("Failed finding duplicates: %v\n", err)
+		}
+
 		if len(dupes) == 0 {
 			fmt.Println("No duplicates found")
 			return
 		}
 
 		fmt.Printf("%v duplicates found:\n", len(dupes))
-		for _, v := range deduper.Find() {
+		for _, v := range dupes {
 			fmt.Printf("%v\n", v)
 		}
 
