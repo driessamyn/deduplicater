@@ -3,6 +3,7 @@ package deduper
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"testing"
 
@@ -113,7 +114,7 @@ func Test_MdFiver_Hash_Ok(t *testing.T) {
 		complete = true
 	}, func(filePath string, err error) {
 		assert.Fail(t, "error not expected")
-	})
+	}, func() {})
 
 	assert.True(t, complete)
 }
@@ -127,7 +128,99 @@ func Test_MdFiver_Hash_No_file(t *testing.T) {
 	}, func(filePath string, err error) {
 		assert.Equal(t, "bar.txt", filePath)
 		assert.Error(t, err)
+	}, func() {})
+}
+
+func Test_ImageFiver_Hash_Ok(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	hasher := imageHasher{fs}
+
+	const fileName = "test.jpg"
+	// HACK: bit of a hack with loading img from disk
+	dat, _ := ioutil.ReadFile("../../test/cat1.jpg")
+
+	if err := afero.WriteFile(fs, fileName, dat, 0644); nil != err {
+		fmt.Errorf("failed to create test file %v: %w", fileName, err)
+	}
+
+	complete := false
+	hasher.hash(fileName, func(f IndexedFile) {
+		assert.Equal(t, fileName, f.Path)
+		assert.Equal(t, 3, f.ImageHash.Kind)
+		assert.Equal(t, uint64(0xc0a0b0f0f0f8c0c0), f.ImageHash.Hash, func() {})
+
+		complete = true
+	}, func(filePath string, err error) {
+		assert.Fail(t, "error not expected")
+	}, func() {})
+
+	assert.True(t, complete)
+}
+
+func Test_ImageFiver_Hash_Wrong_Filetype(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	hasher := imageHasher{fs}
+
+	const fileName = "bar.txt"
+	if err := afero.WriteFile(fs, fileName, []byte("content: bar"), 0644); nil != err {
+		fmt.Errorf("failed to create test file %v: %w", fileName, err)
+	}
+
+	errorProcessed := false
+	processed := false
+	complete := false
+	hasher.hash(fileName, func(f IndexedFile) {
+		processed = true
+	}, func(filePath string, err error) {
+		fmt.Println(err.Error())
+		errorProcessed = true
+	}, func() {
+		complete = true
 	})
+
+	// just skipping
+	assert.False(t, processed)
+	assert.False(t, errorProcessed)
+	assert.True(t, complete)
+}
+
+func Test_ImageFiver_Hash_No_file(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	hasher := imageHasher{fs}
+
+	hasher.hash("bar.jpg", func(f IndexedFile) {
+		assert.Fail(t, "Should not complete")
+	}, func(filePath string, err error) {
+		assert.Equal(t, "bar.jpg", filePath)
+		assert.Error(t, err)
+	}, func() {})
+}
+
+type mockHasher1 struct {
+	hashCount int
+}
+
+func (hasher *mockHasher1) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
+	hasher.hashCount++
+}
+
+type mockHasher2 struct {
+	hashCount int
+}
+
+func (hasher *mockHasher2) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
+	hasher.hashCount++
+}
+
+func Test_Composite_Hasher_All(t *testing.T) {
+	hasher1 := &mockHasher1{}
+	hasher2 := &mockHasher2{}
+	hasher := &compositeHasher{[]fileHasher{hasher1, hasher2}}
+
+	hasher.hash("test.txt", func(f IndexedFile) {}, func(filePath string, err error) {}, func() {})
+
+	assert.Equal(t, 1, hasher1.hashCount)
+	assert.Equal(t, 1, hasher2.hashCount)
 }
 
 func Test_Saver_Ok(t *testing.T) {
@@ -141,10 +234,18 @@ func Test_Saver_Ok(t *testing.T) {
 			{
 				Path:        "foo",
 				Md5Checksum: []byte("foo-md5"),
+				ImageHash: ImageHash{
+					Kind: 0,
+					Hash: 1234567890,
+				},
 			},
 			{
 				Path:        "bar",
 				Md5Checksum: []byte("bar-md5"),
+				ImageHash: ImageHash{
+					Kind: 1,
+					Hash: 91234567890,
+				},
 			},
 		},
 	}
@@ -159,11 +260,12 @@ func Test_Saver_Ok(t *testing.T) {
 
 	jsonFile, _ := fs.Open("index/" + INDEX_NAME)
 	byteValue, _ := afero.ReadAll(jsonFile)
+	actual := string(byteValue)
 
 	assert.JSONEq(t, `[
- { "Path": "foo", "Md5Checksum": "Zm9vLW1kNQ==" }, 
- { "Path": "bar",  "Md5Checksum": "YmFyLW1kNQ==" }]`,
-		string(byteValue))
+ { "Path": "foo", "Md5Checksum": "Zm9vLW1kNQ==", "ImageHash": { "Kind": 0, "Hash": 1234567890} }, 
+ { "Path": "bar",  "Md5Checksum": "YmFyLW1kNQ==", "ImageHash": { "Kind": 1, "Hash": 91234567890} }]`,
+		actual)
 }
 
 func Test_Loader_Ok(t *testing.T) {
@@ -176,13 +278,17 @@ func Test_Loader_Ok(t *testing.T) {
 			{
 				Path:        "foo",
 				Md5Checksum: []byte("foo-md5"),
+				ImageHash: ImageHash{
+					Kind: 0,
+					Hash: 1234567890,
+				},
 			},
 		},
 	}
 
 	filePath := "index"
 	fs := afero.NewMemMapFs()
-	afero.WriteFile(fs, "index/"+INDEX_NAME, []byte("[{ \"Path\": \"bar\",  \"Md5Checksum\": \"YmFyLW1kNQ==\" }]"), 0644)
+	afero.WriteFile(fs, "index/"+INDEX_NAME, []byte("[{ \"Path\": \"bar\",  \"Md5Checksum\": \"YmFyLW1kNQ==\", \"ImageHash\": { \"Kind\": 3, \"Hash\": 9876543210} }]"), 0644)
 
 	saver := indexLoader{index, filePath, fs}
 
@@ -191,6 +297,8 @@ func Test_Loader_Ok(t *testing.T) {
 	assert.Equal(t, 0, index.iMap["bar"])
 	assert.Equal(t, "bar", index.ind[0].Path)
 	assert.Equal(t, "bar-md5", string(index.ind[0].Md5Checksum))
+	assert.Equal(t, 3, index.ind[0].ImageHash.Kind)
+	assert.True(t, 9876543210 == index.ind[0].ImageHash.Hash)
 }
 
 func Test_Loader_Invalid_Json(t *testing.T) {
@@ -236,10 +344,10 @@ func (m mockFileSystemWalker) walk(dir string, fun func(string)) error {
 
 type mockFileHasher struct{}
 
-var hasherMock func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error))
+var hasherMock func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func())
 
-func (m mockFileHasher) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error)) {
-	hasherMock(filePath, fun, errorFunc)
+func (m mockFileHasher) hash(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFun func()) {
+	hasherMock(filePath, fun, errorFunc, completeFun)
 }
 
 type mockSaver struct{}
@@ -293,11 +401,12 @@ func (suite *IndexerTestSuite) SetupTest() {
 	}
 	suite.hasher = &mockFileHasher{}
 
-	hasherMock = func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error)) {
+	hasherMock = func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFunc func()) {
 		fun(*&IndexedFile{
 			Path:        suite.path,
 			Md5Checksum: suite.hash,
 		})
+		completeFunc()
 	}
 
 	suite.saver = &mockSaver{}
@@ -339,8 +448,9 @@ func (suite *IndexerTestSuite) Test_Create_Hash_Error() {
 	path := "foo"
 	raisedError := errors.New("Hashing failed")
 
-	hasherMock = func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error)) {
+	hasherMock = func(filePath string, fun func(f IndexedFile), errorFunc func(filePath string, err error), completeFunc func()) {
 		errorFunc(path, raisedError)
+		completeFunc()
 	}
 
 	err := suite.Indexer.Create("dir")

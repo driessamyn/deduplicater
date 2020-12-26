@@ -25,29 +25,37 @@ type deduperImp struct {
 	Finder
 }
 
-func NewDeduper(fs afero.Fs, indexPath string, md5 bool) Deduper {
+func NewDeduper(fs afero.Fs, indexPath string, md5 bool, imageHash bool) Deduper {
 	ind := &Index{
 		iMap: make(map[string]int),
 		ind:  []IndexedFile{},
 	}
-	// todo: composite finder
-	f := &md5Finder{ind}
+
 	return &deduperImp{
 		fs,
 		indexPath,
 		newIndexer(
 			fs,
 			indexPath,
-			md5,
 			// just in memory dictionary for now - maybe need to do something better in the future
 			ind,
+			md5,
+			imageHash,
 		),
-		f}
+		newCompositeFinder(md5, imageHash, ind)}
+}
+
+// duplicate this as we cannot easily serialise the private members, and so to maintain decoupling.
+//  TODO: combine md5 and image hash in generic dict of hashes
+type ImageHash struct {
+	Kind int
+	Hash uint64
 }
 
 type IndexedFile struct {
 	Path        string
 	Md5Checksum []byte
+	ImageHash   ImageHash
 }
 
 func (f *IndexedFile) merge(mf IndexedFile) {
@@ -75,8 +83,14 @@ func (d deduperImp) IsDirExist(target string) error {
 func (d deduperImp) MoveDuplicates(dupes [][]string, target string) error {
 	for _, files := range dupes {
 		// TODO: let user figure out which ones to delete and which to keep. For now, we keep the one that is nearest to the root
-		sort.Slice(files, func(i, j int) bool {
-			return strings.Count(files[i], "\"") < strings.Count(files[j], "\"")
+		sort.SliceStable(files, func(i, j int) bool {
+			iDepth := strings.Count(files[i], "/")
+			jDepth := strings.Count(files[j], "/")
+			if iDepth == jDepth {
+				// same level -> first alphabetical
+				return strings.TrimSuffix(files[i], filepath.Ext(files[i])) < strings.TrimSuffix(files[j], filepath.Ext(files[j]))
+			}
+			return iDepth < jDepth
 		})
 		for _, file := range files[1:] {
 			newPath := filepath.Join(target, file[len(d.indexPath):])

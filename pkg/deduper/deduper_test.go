@@ -60,7 +60,7 @@ func (suite *MemoryFsTestSuite) SetupTest() {
 }
 
 func (suite *MemoryFsTestSuite) Test_DirExist_InvalidDir() {
-	deduper := NewDeduper(suite.fs, suite.indexPath, true)
+	deduper := NewDeduper(suite.fs, suite.indexPath, true, false)
 
 	err := deduper.IsDirExist("invalidDir")
 
@@ -68,7 +68,7 @@ func (suite *MemoryFsTestSuite) Test_DirExist_InvalidDir() {
 }
 
 func (suite *MemoryFsTestSuite) Test_DirExist_ValidDir() {
-	deduper := NewDeduper(suite.fs, suite.indexPath, true)
+	deduper := NewDeduper(suite.fs, suite.indexPath, true, false)
 
 	err := deduper.IsDirExist(suite.indexPath)
 
@@ -76,7 +76,7 @@ func (suite *MemoryFsTestSuite) Test_DirExist_ValidDir() {
 }
 
 func (suite *MemoryFsTestSuite) Test_MoveDuplicates_ok() {
-	deduper := NewDeduper(suite.fs, suite.indexPath, true)
+	deduper := NewDeduper(suite.fs, suite.indexPath, true, false)
 
 	target := "testDir/temp"
 	dupe1 := []string{"testDir/pictures/foo.txt", "testDir/pictures/bar.txt", "testDir/pictures/fred.txt"}
@@ -92,29 +92,29 @@ func (suite *MemoryFsTestSuite) Test_MoveDuplicates_ok() {
 
 	assert.Nil(suite.T(), err)
 	// boohoo, bad unit test, many asserts :(
-	moved, _ := afero.Exists(suite.fs, "testDir/temp/bar.txt")
+	moved, _ := afero.Exists(suite.fs, "testDir/temp/foo.txt")
 	assert.True(suite.T(), moved)
 	moved, _ = afero.Exists(suite.fs, "testDir/temp/fred.txt")
 	assert.True(suite.T(), moved)
-	moved, _ = afero.Exists(suite.fs, "testDir/temp/another/dir/bar.txt")
+	moved, _ = afero.Exists(suite.fs, "testDir/temp/hello/world/foo.txt")
 	assert.True(suite.T(), moved)
 
-	notmoved, _ := afero.Exists(suite.fs, "testDir/pictures/foo.txt")
+	notmoved, _ := afero.Exists(suite.fs, "testDir/pictures/bar.txt")
 	assert.True(suite.T(), notmoved)
 
-	removed, _ := afero.Exists(suite.fs, "testDir/pictures/bar.txt")
-	assert.False(suite.T(), removed)
+	notmoved, _ = afero.Exists(suite.fs, "testDir/pictures/another/dir/bar.txt")
+	assert.True(suite.T(), notmoved)
 }
 
 func (suite *MemoryFsTestSuite) Test_MoveDuplicates_error() {
-	deduper := NewDeduper(suite.fs, suite.indexPath, true)
+	deduper := NewDeduper(suite.fs, suite.indexPath, true, false)
 
 	target := "testDir/temp"
 	dupe1 := []string{"testDir/pictures/foo.txt", "testDir/pictures/bar.txt"}
 
 	// only create 1 file
-	if err := afero.WriteFile(suite.fs, "testDir/pictures/foo.txt", []byte(fmt.Sprintf("content: %s", "foo")), 0644); nil != err {
-		fmt.Errorf("failed to create test file %v: %w", "testDir/pictures/foo.txt", err)
+	if err := afero.WriteFile(suite.fs, "testDir/pictures/bar.txt", []byte(fmt.Sprintf("content: %s", "bar")), 0644); nil != err {
+		fmt.Errorf("failed to create test file %v: %w", "testDir/pictures/bar.txt", err)
 	}
 
 	err := deduper.MoveDuplicates([][]string{dupe1}, target)

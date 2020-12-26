@@ -25,7 +25,9 @@ Or use [homebrew](https://brew.sh/):
 
 Create and index of all files in `/mnt/c/Users/bob/Pictures` and store the index in `/mnt/c/Users/bob/Pictures`.
 A file called `.duplicate-index.json` will be placed in `/mnt/c/Users/bob/Pictures`.
-Currently `md5` is the only hashing option.
+Choose from `md5` and/or `imageHash` strategies. `md5` is quicker and supports all file types but will only pick up 100% identical files. 
+`imageHash` currently only supports `jpeg` images but picks up images that are identical, but have, for example, different metadata.
+
 ```bash
 deduplicater index --md5 -d "/mnt/c/Users/bob/Pictures" -f "/mnt/c/Users/bob/Pictures"
 ```
@@ -33,7 +35,8 @@ deduplicater index --md5 -d "/mnt/c/Users/bob/Pictures" -f "/mnt/c/Users/bob/Pic
 ### Find and remove duplicates
 
 Use the index to identify duplicate files.
-Currently only the `md5` hash is supported to identify duplicates.
+Choose to either use the `md5` hash or the `imageHash`.
+
 ``` bash
 deduplicater find --md5 -f "/mnt/c/Users/bob/Pictures"
 ```
